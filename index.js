@@ -67,6 +67,40 @@ async function getGraphQLClient() {
 	} );
 }
 
+async function getReleaseDate() {
+	const index = gql`{
+  		repository(owner: "Automattic", name: "vip-go-internal-cli") {
+    		object(expression: "v2.34.0") {
+      			... on Commit {
+        			oid
+        			messageHeadline
+        			committedDate
+        			author {
+          				user {
+            				login
+          				}
+        			}
+      			}
+    		}
+  		}
+	}`;
+
+	const client = await getGraphQLClient();
+	try {
+		console.log( 'Connecting...' );
+		const result = await client.query( {
+			query: index
+		} );
+
+		if( ! result.data.repository.object.committedDate ) {
+			return console.log( 'Release data not found' );
+		}
+		return result.data.repository.object.committedDate;
+	} catch ( e ) {
+		console.log( `Error querying GitHub GraphQL API ${ JSON.stringify( e ) }` );
+	}
+}
+
 async function listMergedPRs() {
 	const index = gql`{
 	  search(first: 100, query: "repo:Automattic/vip-go-internal-cli is:pr is:merged merged:2021-07-22..2021-08-02", type: ISSUE) {
@@ -90,10 +124,11 @@ async function listMergedPRs() {
 		if( ! result.data.search.nodes.length ) {
 			return console.log( 'No PRs found' );
 		}
-		return console.log( result.data.search.nodes.length );
+		return result.data.search.nodes;
 	} catch ( e ) {
 		console.log( `Error querying GitHub GraphQL API ${ JSON.stringify( e ) }` );
 	}
 }
 
 listMergedPRs();
+getReleaseDate();
