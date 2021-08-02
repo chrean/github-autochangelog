@@ -67,43 +67,52 @@ async function getGraphQLClient() {
 	} );
 }
 
-async function getReleaseDate() {
-	const index = gql`{
-  		repository(owner: "Automattic", name: "vip-go-internal-cli") {
-    		object(expression: "v2.34.0") {
-      			... on Commit {
-        			oid
-        			messageHeadline
-        			committedDate
-        			author {
-          				user {
-            				login
-          				}
-        			}
-      			}
-    		}
-  		}
+async function getReleaseDate( releaseTag ) {
+	const index = gql`
+		query GetReleaseDate($releaseTag: String)
+		{
+  			repository(owner: "Automattic", name: "vip-go-internal-cli") {
+    			object(expression: $releaseTag) {
+      				... on Commit {
+        				oid
+        				messageHeadline
+        				committedDate
+        				author {
+          					user {
+            					login
+          					}
+        				}
+      				}
+    			}
+  			}
 	}`;
 
 	const client = await getGraphQLClient();
 	try {
 		console.log( 'Connecting...' );
 		const result = await client.query( {
-			query: index
+			query: index,
+			variables: {
+				releaseTag,
+			},
 		} );
 
 		if( ! result.data.repository.object.committedDate ) {
 			return console.log( 'Release data not found' );
 		}
-		return result.data.repository.object.committedDate;
+
+		const parsedDate = new Date( result.data.repository.object.committedDate );
+
+		return parsedDate.toISOString().split('T')[0];
 	} catch ( e ) {
 		console.log( `Error querying GitHub GraphQL API ${ JSON.stringify( e ) }` );
 	}
 }
 
-async function listMergedPRs() {
-	const index = gql`{
-	  search(first: 100, query: "repo:Automattic/vip-go-internal-cli is:pr is:merged merged:2021-07-22..2021-08-02", type: ISSUE) {
+async function listMergedPRs( startDate, endDate ) {
+	const queryString = `repo:Automattic/vip-go-internal-cli is:pr is:merged merged:${startDate}..${endDate}`;
+	const index = gql`query ListMergedSince($queryString: String!){
+	  search(first: 100, query: $queryString, type: ISSUE) {
 		nodes {
 		  ... on PullRequest {
 			title
@@ -115,9 +124,11 @@ async function listMergedPRs() {
 
 	const client = await getGraphQLClient();
 	try {
-		console.log( 'Connecting...' );
 		const result = await client.query( {
-			query: index
+			query: index,
+			variables: {
+				queryString,
+			},
 		} );
 		console.log( 'Finished querying GitHub GraphQL API, results:' );
 
@@ -130,5 +141,17 @@ async function listMergedPRs() {
 	}
 }
 
-listMergedPRs();
-getReleaseDate();
+async function main() {
+	const releaseTag = process.argv[ 2 ];
+	const startDate = await getReleaseDate( releaseTag );
+	const endDate = new Date().toISOString().split('T')[0];
+	console.log( `Getting PRs starting: ${ startDate }, ending: ${ endDate }` );
+	const mergedPRs = await listMergedPRs( startDate, endDate );
+	for ( const pr of mergedPRs ) {
+		const id = pr.url.substring( pr.url.lastIndexOf( '/' ) + 1 );
+		console.log( `- ${ pr.title } ( #${ id } )` );
+	}
+}
+
+main();
+
