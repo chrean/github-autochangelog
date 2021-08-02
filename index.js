@@ -67,18 +67,19 @@ async function getGraphQLClient() {
 	} );
 }
 
-const index = gql`{
-  search(first: 100, query: "repo:Automattic/vip-go-internal-cli is:pr is:merged merged:2021-07-22..2021-08-02", type: ISSUE) {
-    nodes {
-      ... on PullRequest {
-        title
-        url
-      }
-    }
-  }
-}`;
+async function listMergedPRs() {
+	const index = gql`{
+	  search(first: 100, query: "repo:Automattic/vip-go-internal-cli is:pr is:merged merged:2021-07-22..2021-08-02", type: ISSUE) {
+		nodes {
+		  ... on PullRequest {
+			title
+			url
+		  }
+		}
+	  }
+	}`;
 
-getGraphQLClient().then( async client => {
+	const client = await getGraphQLClient();
 	try {
 		console.log( 'Connecting...' );
 		const result = await client.query( {
@@ -93,5 +94,6 @@ getGraphQLClient().then( async client => {
 	} catch ( e ) {
 		console.log( `Error querying GitHub GraphQL API ${ JSON.stringify( e ) }` );
 	}
-} );
+}
 
+listMergedPRs();
