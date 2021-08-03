@@ -5,6 +5,8 @@ const { createHttpLink } = require( 'apollo-link-http' );
 const { gql } = require( 'apollo-server' );
 const fetch = require( 'node-fetch' );
 
+const { program } = require('commander');
+
 async function getGraphQLClient() {
 	const settings = require('dotenv').config().parsed;
 	if (settings.error) {
@@ -130,7 +132,7 @@ async function listMergedPRs( startDate, endDate ) {
 		console.log( 'Finished querying GitHub GraphQL API, results:' );
 
 		if( ! result.data.search.nodes.length ) {
-			return console.log( 'No PRs found' );
+			return;
 		}
 		return result.data.search.nodes;
 	} catch ( e ) {
@@ -138,12 +140,27 @@ async function listMergedPRs( startDate, endDate ) {
 	}
 }
 
+program
+	.requiredOption( '-p, --previous-release <previousTag>', 'Release tag of the previous release')
+	.option( '-r, --current-release <currentTag>', 'Release tag of the release to compare to. Leave empty to retrieve up to the latest merged PR' );
+
+program.parse( process.argv );
+
+const options = program.opts();
+
 async function main() {
-	const releaseTag = process.argv[ 2 ];
-	const startDate = await getReleaseDate( releaseTag );
-	const endDate = new Date().toISOString().split('T')[0];
+	const startDate = await getReleaseDate( options.previousRelease );
+	let endDate;
+	if ( options.currentRelease ) {
+		endDate = await getReleaseDate( options.currentRelease );
+	} else {
+		endDate = new Date().toISOString().split('T')[0];
+	}
 
 	const mergedPRs = await listMergedPRs( startDate, endDate );
+	if ( ! mergedPRs || ! mergedPRs.length ) {
+		return console.error( `No merged PRs found between ${ startDate } and ${ endDate }` );
+	}
 	for ( const pr of mergedPRs ) {
 		const id = pr.url.substring( pr.url.lastIndexOf( '/' ) + 1 );
 		console.log( `- ${ pr.title } ( #${ id } )` );
