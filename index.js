@@ -89,7 +89,6 @@ async function getReleaseDate( releaseTag ) {
 
 	const client = await getGraphQLClient();
 	try {
-		console.log( 'Connecting...' );
 		const result = await client.query( {
 			query: index,
 			variables: {
@@ -98,12 +97,10 @@ async function getReleaseDate( releaseTag ) {
 		} );
 
 		if( ! result.data.repository.object.committedDate ) {
-			return console.log( 'Release data not found' );
+			return console.log( 'Release date not found' );
 		}
 
-		const parsedDate = new Date( result.data.repository.object.committedDate );
-
-		return parsedDate.toISOString().split('T')[0];
+		return result.data.repository.object.committedDate;
 	} catch ( e ) {
 		console.log( `Error querying GitHub GraphQL API ${ JSON.stringify( e ) }` );
 	}
@@ -145,7 +142,7 @@ async function main() {
 	const releaseTag = process.argv[ 2 ];
 	const startDate = await getReleaseDate( releaseTag );
 	const endDate = new Date().toISOString().split('T')[0];
-	console.log( `Getting PRs starting: ${ startDate }, ending: ${ endDate }` );
+
 	const mergedPRs = await listMergedPRs( startDate, endDate );
 	for ( const pr of mergedPRs ) {
 		const id = pr.url.substring( pr.url.lastIndexOf( '/' ) + 1 );
