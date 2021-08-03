@@ -69,11 +69,11 @@ async function getGraphQLClient() {
 	} );
 }
 
-async function getReleaseDate( releaseTag ) {
+async function getReleaseDate( owner, repo, releaseTag ) {
 	const index = gql`
-		query GetReleaseDate($releaseTag: String)
+		query GetReleaseDate($releaseTag: String,$owner: String!, $repo: String!)
 		{
-  			repository(owner: "Automattic", name: "vip-go-internal-cli") {
+  			repository(owner: $owner, name: $repo) {
     			object(expression: $releaseTag) {
       				... on Commit {
         				oid
@@ -94,6 +94,8 @@ async function getReleaseDate( releaseTag ) {
 		const result = await client.query( {
 			query: index,
 			variables: {
+				owner,
+				repo,
 				releaseTag,
 			},
 		} );
@@ -108,8 +110,8 @@ async function getReleaseDate( releaseTag ) {
 	}
 }
 
-async function listMergedPRs( startDate, endDate ) {
-	const queryString = `repo:Automattic/vip-go-internal-cli is:pr is:merged merged:${startDate}..${endDate}`;
+async function listMergedPRs( owner, repo, startDate, endDate ) {
+	const queryString = `repo:${ owner }/${ repo } is:pr is:merged merged:${ startDate }..${ endDate }`;
 	const index = gql`query ListMergedSince($queryString: String!){
 	  search(first: 100, query: $queryString, type: ISSUE) {
 		nodes {
@@ -129,7 +131,6 @@ async function listMergedPRs( startDate, endDate ) {
 				queryString,
 			},
 		} );
-		console.log( 'Finished querying GitHub GraphQL API, results:' );
 
 		if( ! result.data.search.nodes.length ) {
 			return;
@@ -141,15 +142,17 @@ async function listMergedPRs( startDate, endDate ) {
 }
 
 program
+	.requiredOption( '-o, --owner <repoOwner>', 'Owner of the repo to extract PRs from' )
+	.requiredOption( '-r, --repo <repo>', 'Name of the repository' )
 	.requiredOption( '-p, --previous-release <previousTag>', 'Release tag of the previous release')
-	.option( '-r, --current-release <currentTag>', 'Release tag of the release to compare to. Leave empty to retrieve up to the latest merged PR' );
+	.option( '-c, --current-release <currentTag>', 'Release tag of the release to compare to. Leave empty to retrieve up to the latest merged PR' );
 
 program.parse( process.argv );
 
 const options = program.opts();
 
 async function main() {
-	const startDate = await getReleaseDate( options.previousRelease );
+	const startDate = await getReleaseDate( options.owner, options.repo, options.previousRelease );
 	let endDate;
 	if ( options.currentRelease ) {
 		endDate = await getReleaseDate( options.currentRelease );
@@ -157,10 +160,13 @@ async function main() {
 		endDate = new Date().toISOString().split('T')[0];
 	}
 
-	const mergedPRs = await listMergedPRs( startDate, endDate );
+	const mergedPRs = await listMergedPRs( options.owner, options.repo, startDate, endDate );
 	if ( ! mergedPRs || ! mergedPRs.length ) {
 		return console.error( `No merged PRs found between ${ startDate } and ${ endDate }` );
 	}
+	console.log();
+	console.log( `List of merged PRs for ${ options.owner }/${ options.repo } between ${ startDate } and ${ endDate }` );
+	console.log();
 	for ( const pr of mergedPRs ) {
 		const id = pr.url.substring( pr.url.lastIndexOf( '/' ) + 1 );
 		console.log( `- ${ pr.title } ( #${ id } )` );
