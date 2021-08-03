@@ -7,18 +7,9 @@ const fetch = require( 'node-fetch' );
 
 const { program } = require('commander');
 
+const settings = require('dotenv').config().parsed;
+
 async function getGraphQLClient() {
-	const settings = require('dotenv').config().parsed;
-	if (settings.error) {
-		throw settings.error;
-	}
-
-	const token = settings.GITHUB_API_TOKEN;
-
-	if ( ! token ) {
-		return console.error( 'Please provide a valid GitHub API token through the .env file. See .env.example.' );
-	}
-
 	const GITHUB_GRAPHQL_API_URI = 'https://api.github.com/graphql';
 
 	// TODO could fail authenticating, so we need to add a custom error to ApolloClient
@@ -27,7 +18,7 @@ async function getGraphQLClient() {
 	const httpLink = createHttpLink( {
 		uri: GITHUB_GRAPHQL_API_URI,
 		headers: {
-			Authorization: `Bearer ${ token }`,
+			Authorization: `Bearer ${ settings.GITHUB_API_TOKEN }`,
 			// Fallback UA intentionally uses a really old version number to distinguish
 			// it from the real values set in the env vars so we know where it's coming from
 			//'User-Agent': process.env.HTTP_USER_AGENT || 'wpcomvip-parker/0.0.1',
@@ -118,6 +109,9 @@ async function listMergedPRs( owner, repo, startDate, endDate ) {
 		  ... on PullRequest {
 			title
 			url
+			author {
+			  login
+			}
 		  }
 		}
 	  }
@@ -152,6 +146,14 @@ program.parse( process.argv );
 const options = program.opts();
 
 async function main() {
+	if (settings.error) {
+		return console.error( settings.error );
+	}
+
+	if ( ! settings.GITHUB_API_TOKEN ) {
+		return console.error( 'Please provide a valid GitHub API token through the .env file. See .env.example.' );
+	}
+
 	const startDate = await getReleaseDate( options.owner, options.repo, options.previousRelease );
 	let endDate;
 	if ( options.currentRelease ) {
@@ -165,12 +167,28 @@ async function main() {
 		return console.error( `No merged PRs found between ${ startDate } and ${ endDate }` );
 	}
 	console.log();
-	console.log( `List of merged PRs for ${ options.owner }/${ options.repo } between ${ startDate } and ${ endDate }` );
-	console.log();
+
+	const updatesList = [];
+	const contributionsList = [];
 	for ( const pr of mergedPRs ) {
 		const id = pr.url.substring( pr.url.lastIndexOf( '/' ) + 1 );
-		console.log( `- ${ pr.title } ( #${ id } )` );
+		const PRString = `- ${ pr.title } ( #${ id } ) by ${ pr.author.login }`;
+		if ( settings.DEPENDENCY_AUTHORS && settings.DEPENDENCY_AUTHORS.includes( pr.author.login ) ) {
+			updatesList.push( PRString );
+		} else {
+			contributionsList.push( PRString );
+		}
 	}
+	// Print contributions
+	console.log( '## New and Fixes' );
+	console.log();
+	contributionsList.map( c => { return console.log( c ); } );
+	console.log();
+
+	// Print updates
+	console.log( '## Updates' );
+	console.log();
+	updatesList.map( c => { return console.log( c ); } );
 }
 
 main();
